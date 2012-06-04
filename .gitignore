@@ -1,0 +1,9 @@
+*.png
+*.eps
+
+temp.sed
+
+!horzalign.eps
+
+old/*
+
