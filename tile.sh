@@ -1,12 +1,31 @@
 #!/bin/sh
 
+# iPhone 4: screen res: 960x640 pix, pix density: 326 ppi
+# iPhone 3: screen res: 480x320 pix, pix density: 136 ppi
+# iPad 1,2: screen res: 1024×768 pix, pix density: 132 ppi
+# new iPad: screen res: 2048x1536 pix, pix density: 264 ppi
+
+# manual
+# ./tile.sh -0 -t jim ja 
+# single-standing jim spelled "ja" with default y-axis alignment and tiled
+# ./tile.sh -2 -g -y 0.6 -d 72 jim --ja--
+# middle jim with grid spelled "ja" with yalign=0.6, density=72
+
+
+# DEFAULTS
 # position of letter single, front, middle, end
 pos=0
-
+# y-axis alignment
 yalign=0.5
+# do not draw grid
 isGridOn=0
+# convert single letter (instead of tiled)
+tile=0
+# density value for ImageMagick 'convert'
+dens=72
 
-while getopts ":01234y:g" opt; do
+
+while getopts ":0123y:gtd:" opt; do
 	case $opt in
 		0) 
 			pos=0
@@ -20,12 +39,17 @@ while getopts ":01234y:g" opt; do
 		3)
 			pos=3
 			;;
-		4)
-			pos=4
-			;;
 		y)
 #			echo "setting y-coordinate alignment to $OPTARG"
 			yalign=$OPTARG
+			;;
+		d)
+#			echo "setting y-coordinate alignment to $OPTARG"
+			dens=$OPTARG
+			;;
+		t)
+			echo "converting tile to png"
+			tile=1
 			;;
 		g)
 			isGridOn=1
@@ -62,19 +86,16 @@ fi
 # which letter position?
 case $pos in
 	0)
-		echo "-> single letter untrimmed"
+		echo "-> single letter"
 		;;
 	1)
-		echo "-> single letter trimmed"
+		echo "-> front letter"
 		;;
 	2)
-		echo "-> front letter trimmed"
+		echo "-> middle letter"
 		;;
 	3)
-		echo "-> middle letter trimmed"
-		;;
-	4)
-		echo "-> rear letter trimmed"
+		echo "-> rear letter"
 		;;
 esac
 
@@ -85,7 +106,7 @@ echo "-> making \"$str\" in file ${fname}.eps"
 
 # letter file
 lfile=_$fname
-echo "-> processing letter file: $lfile.tex"
+echo "-> making letter file: $lfile.tex"
 
 
 cat >${lfile}.tex <<EOF
@@ -109,9 +130,9 @@ for i in aux log dvi tex
 	do rm ${lfile}.${i}
 done
 
-# sfile or scaled file
+# scale file
 sfile=_${fname}_s
-echo "-> processing scaled file: ${sfile}.tex"
+echo "-> making scaled file: ${sfile}.tex"
 
 cat >${sfile}.tex <<EOF
 \documentclass[12pt]{article}
@@ -136,13 +157,8 @@ for i in aux log dvi tex
 done
 rm $lfile.eps
 
-#############################################
-# Find BoundingBox llx lly urx ury in sfile #
-#############################################
-
 echo "-> finding boundingbox of $sfile.eps"
 bbparam=`sed -n '/%%BoundingBox/{p;q;}' $sfile.eps`
-hbbparam=`sed -n '/%%HiResBoundingBox/{p;q;}' $sfile.eps`
 
 export IFS=" "
 
@@ -157,27 +173,9 @@ lly=${bb[2]}
 urx=${bb[3]}
 ury=${bb[4]}
 
-i=0;
-for word in $hbbparam;
-	do bb[i]=$word
-#	echo "$i: ${bb[i]}"
-	let i=i+1
-done
-hllx=${bb[1]}
-hlly=${bb[2]}
-hurx=${bb[3]}
-hury=${bb[4]}
-
 echo "-> BoundingBox parameters for $sfile.eps are $llx $lly $urx $ury"
-echo "-> HiResBoundingBox parameters for $sfile.eps are $hllx $hlly $hurx $hury"
 
-
-######################################################
-# make tile file (tfile) _xxxN_t.eps                 #
-# tfile contains a scaled letter in (in)visible grid #
-# letter can be aligned using grid                   #
-######################################################
-
+# tile file
 tfile=_${fname}_t
 echo "-> processing tile file: $tfile.tex"
 
@@ -195,8 +193,8 @@ if [ $isGridOn -eq 1 ]
 	then
 		echo "-> using grid"
 		cat >>${tfile}.tex <<EOF
-\psgrid[gridcolor=gray,subgridcolor=gray,subgriddiv=6]
-\psline[linecolor=gray,linewidth=0.1pt](0,0.438)(1,0.438)
+\psgrid[gridcolor=darkgray,subgridcolor=gray,subgriddiv=6]
+\psline[linecolor=darkgray,linewidth=0.1pt](0,0.438)(1,0.438)
 EOF
 fi
 cat >>${tfile}.tex <<EOF
@@ -216,50 +214,6 @@ done
 
 #rm ${sfile}.eps
 
-##################################################
-# trim tfile if tile type ($pos) is 1, 2, 3 or 4 #
-##################################################
-
-# BoundingBox 72 645 147 720
-#    is worked out from a typical letter (not a ki--yi) on a grid.
-#    Value given by epstool is 71 644 148 721 but
-#    to get 75x75 pix resolution, it is corrected.
-#    This value also rounds the HiResBoundingBox value.
-
-if [ $pos -gt 0 ] ; then
-
-	# trim tile
-	
-	# first, make sure between llx and urx are the correct width
-	#
-	#     |<--- width --->|
-	#   llx               urx
-	#
-	# if llx=m.5... then round it up (llx=llx+1) and then do urx=urx+1
-	echo "-> trimming tile to fit letter"
-
-	lx=`printf "%0.f\n" $hllx`
-	echo "-> rounding $hllx to $lx \c"
-	if [ $lx -gt $llx ]; then
-		let ux=urx+1
-		echo "and incr $urx to $ux"
-	else
-		let ux=urx
-		echo "and $urx is not changed"
-	fi
-	
-	# replace BB and HRBB with correct values
-	cat >temp.sed <<EOF
-1,/%%Bounding/s/%%BoundingBox:.*/%%BoundingBox: ${lx} 645 ${ux} 720/
-1,/%%HiResBounding/s/%%HiResBoundingBox:.*/%%HiResBoundingBox: ${hllx} 644.935 ${hurx} 720.077/
-EOF
-	sed -f temp.sed ${tfile}.eps >temp.eps
-
-	mv temp.eps ${tfile}.eps
-
-else
-
-	echo "-> tile corrected so it is 75x75 px"
 
 sed '/%%BoundingBox/ c\
 %%BoundingBox: 72 645 147 720\
@@ -269,38 +223,41 @@ sed '/%%HiResBoundingBox/ c\
 %%HiResBoundingBox: 71.936 644.935 147.077 720.077\
 ' temp.eps >${tfile}.eps
 
-	rm temp.eps
+echo Position of letter $pos
+echo trimming white space
+if [ $pos -eq 3 ]
+	then
+		let x=llx+20
+		# sed script to modify BoundingBox parameters only on the first occurrence
+		cat >temp.sed <<EOF
+#--start of script--
+1{x;s/^/first/;x;}
+1,/foo/{x;/first/s///;x;/%%BoundingBox/ c\ 
+%%BoundingBox $x 645 147 720 
+;}
+#---end of script---
+EOF
+
+		echo did this with llx $x
+		sed -f temp.sed $sfile.eps >test.eps
 fi
 
-
-exit
-
-#echo $pos
-#if [ $pos -eq 3 ]
-#	then
-#		let x=llx+10
-		# sed script to modify BoundingBox parameters only on the first occurrence
-#		cat >temp.sed <<EOF
-##--start of script--
-##1{x;s/^/first/;x;}
-##,/foo/{x;/first/s///;x;/%%BoundingBox/ c\ 
-##%BoundingBox $x 645 147 720 
-##}
-##---end of script---
-#/%%BoundingBox/s/.*/%%BoundingBox: ${x} ${lly} ${urx} ${ury}/
-#EOF
-#
-#		echo did this
-#		sed -f temp.sed $sfile.eps >test.eps
-#fi
-
+rm temp.eps
 
 # write file info
-# this contains the y-axis alignment of the letter
 cat >>${1}${pos}.inf <<EOF
 yalign: $yalign
 EOF
 
 
-convert ${tfile}.eps ${1}${pos}.png
+#dens=80
+
+if [ $tile -eq 0 ]
+	then
+		echo converting to single letter at density $dens
+		convert -density $dens ${sfile}.eps ${1}${pos}.png
+	else
+		echo converting to tile
+		convert ${tfile}.eps ${1}${pos}.png
+fi
 
