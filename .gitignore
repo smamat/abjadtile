@@ -1,5 +1,10 @@
 *.png
 *.eps
+*.aux
+*.dvi
+*.log
+*.inf
+*.ps
 
 temp.sed
 
